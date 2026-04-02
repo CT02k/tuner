@@ -4,6 +4,13 @@ import PageShell from "#/components/PageShell"
 import ProgressHeader from "#/components/ProgressHeader"
 import PageTransition from "#/components/PageTransition"
 import { useMicrophone } from "#/hooks/useMicrophone"
+import {
+  defaultInstrumentGaugePalette,
+  formatInstrumentCopy,
+  getGaugeArcColors,
+  getInstrumentStringMap,
+  instruments,
+} from "#/lib/instruments"
 import { createFileRoute } from "@tanstack/react-router"
 import type { LottieRefCurrentProps } from "lottie-react"
 import { AnimatePresence, motion } from "motion/react"
@@ -12,22 +19,7 @@ import { GaugeComponent } from "react-gauge-component"
 
 export const Route = createFileRoute("/")({ component: App })
 
-type StringId = "G3" | "D4" | "A4" | "E5"
 type OnboardingView = "choice" | "guided" | "closed"
-
-const VIOLIN_STRINGS = [
-  { id: "G3", label: "G", name: "G", freq: 196.0 },
-  { id: "D4", label: "D", name: "D", freq: 293.66 },
-  { id: "A4", label: "A", name: "A", freq: 440.0 },
-  { id: "E5", label: "E", name: "E", freq: 659.25 },
-] satisfies ReadonlyArray<{
-  id: StringId
-  label: string
-  name: string
-  freq: number
-}>
-
-const GUIDED_STRINGS: StringId[] = ["E5", "A4", "D4", "G3"]
 
 function getCentsOff(freq: number, targetFreq: number) {
   return 1200 * Math.log2(freq / targetFreq)
@@ -41,28 +33,45 @@ function clampFrequency(freq: number, min: number, max: number) {
   return Math.min(max, Math.max(min, freq))
 }
 
-const GAUGE_MIN = -50
-const GAUGE_MAX = 50
-
 function App() {
+  const instrument = instruments.violin
+  const stringMap = useMemo(
+    () => getInstrumentStringMap(instrument),
+    [instrument],
+  )
+  const guidedSteps = instrument.guidedOrder.map(
+    (stringId) => stringMap.get(stringId)?.label ?? stringId,
+  )
   const { frequency, volume, isListening, error, start, stop } = useMicrophone()
   const [onboardingView, setOnboardingView] = useState<OnboardingView>("choice")
   const [guidedStep, setGuidedStep] = useState(0)
-  const [selectedString, setSelectedString] = useState<StringId>("E5")
+  const [selectedString, setSelectedString] = useState<string>(
+    instrument.guidedOrder[0],
+  )
   const arrowLeftRef = useRef<LottieRefCurrentProps>(null)
 
   const activeStringId =
-    onboardingView === "guided" ? GUIDED_STRINGS[guidedStep] : selectedString
+    onboardingView === "guided"
+      ? (instrument.guidedOrder[guidedStep] ?? instrument.guidedOrder[0])
+      : selectedString
 
   const usableFrequency = useMemo(() => {
-    if (!isValidFrequency(frequency)) return null
-    if (volume && volume < 0.01) return null
+    if (
+      !isValidFrequency(
+        frequency,
+        instrument.frequencyRange.min,
+        instrument.frequencyRange.max,
+      )
+    ) {
+      return null
+    }
+    if (volume && volume < instrument.minimumVolume) return null
     return frequency
-  }, [frequency, volume])
+  }, [frequency, instrument, volume])
 
   const targetString = useMemo(() => {
-    return VIOLIN_STRINGS.find((item) => item.id === activeStringId) ?? null
-  }, [activeStringId])
+    return stringMap.get(activeStringId) ?? null
+  }, [activeStringId, stringMap])
 
   const cents = useMemo(() => {
     if (!usableFrequency || !targetString) return null
@@ -71,11 +80,80 @@ function App() {
 
   const gaugeValue = useMemo(() => {
     if (cents == null) return 0
-    return clampFrequency(cents, GAUGE_MIN, GAUGE_MAX)
-  }, [cents])
+    return clampFrequency(cents, instrument.gauge.min, instrument.gauge.max)
+  }, [cents, instrument.gauge.max, instrument.gauge.min])
 
-  const isInTune = Math.abs(gaugeValue) <= 10
-  const isLastGuidedStep = guidedStep === GUIDED_STRINGS.length - 1
+  const isLastGuidedStep = guidedStep === instrument.guidedOrder.length - 1
+  const isInTune = Math.abs(gaugeValue) <= instrument.gauge.inTuneThreshold
+  const gaugeArcColors = getGaugeArcColors(
+    gaugeValue,
+    isInTune,
+    instrument.gauge,
+  )
+
+  function Gauge() {
+    return (
+      <GaugeComponent
+        value={gaugeValue}
+        type="semicircle"
+        minValue={instrument.gauge.min}
+        maxValue={instrument.gauge.max}
+        arc={{
+          width: 0.18,
+          cornerRadius: 10,
+          gradient: false,
+          colorArray: gaugeArcColors,
+          nbSubArcs: 5,
+          padding: 0.01,
+          subArcsStrokeWidth: 0,
+          effects: { glow: false, innerShadow: false },
+        }}
+        pointer={{
+          animationDuration: 120,
+          animationDelay: 0,
+          animate: false,
+        }}
+        labels={{
+          valueLabel: {
+            hide: true,
+            animateValue: false,
+          },
+          tickLabels: {
+            type: "outer",
+            hideMinMax: true,
+            ticks: instrument.gauge.ticks.map((tickValue) => ({
+              value: tickValue,
+            })),
+            defaultTickLineConfig: {
+              color: defaultInstrumentGaugePalette.tick,
+              width: 1,
+              length: 6,
+            },
+            defaultTickValueConfig: {
+              style: {
+                fontSize: "11px",
+                fill: "#587166",
+                fontWeight: "600",
+              },
+            },
+          },
+        }}
+        startAngle={-90}
+        endAngle={90}
+        pointers={[
+          {
+            value: gaugeValue,
+            type: "needle",
+            baseColor: defaultInstrumentGaugePalette.needle,
+            color: defaultInstrumentGaugePalette.needle,
+            length: 0.6,
+            width: 9,
+            strokeWidth: 0,
+          },
+        ]}
+      />
+    )
+  }
 
   if (onboardingView !== "closed") {
     return (
@@ -83,7 +161,7 @@ function App() {
         <ProgressHeader
           currentStep={guidedStep}
           isVisible={onboardingView === "guided"}
-          steps={GUIDED_STRINGS}
+          steps={guidedSteps}
           arrowLeftRef={arrowLeftRef}
           onBack={() => {
             if (onboardingView === "guided" && guidedStep > 0) {
@@ -112,7 +190,7 @@ function App() {
                         animate={{ x: 0, opacity: 1 }}
                         transition={{ duration: 0.4 }}
                       >
-                        {"🎻"}
+                        {instrument.icon}
                       </motion.h1>
                     </div>
                   </motion.div>
@@ -123,7 +201,7 @@ function App() {
                       animate={{ opacity: [0, 1], y: [50, 0] }}
                       transition={{ duration: 0.4 }}
                     >
-                      Choose how you want to tune
+                      {instrument.copy.pickerTitle}
                     </motion.h1>
                   </div>
 
@@ -143,9 +221,11 @@ function App() {
                         variant="option"
                         className="bg-green-500 text-white"
                       >
-                        <p className="font-semibold">Tune in steps</p>
+                        <p className="font-semibold">
+                          {instrument.copy.guidedModeTitle}
+                        </p>
                         <p className="text-sm font-normal">
-                          Start from E and continue to A, D, and G.
+                          {instrument.copy.guidedModeDescription}
                         </p>
                       </Button>
                     </motion.div>
@@ -163,9 +243,11 @@ function App() {
                         variant="option"
                         className="bg-blue-500"
                       >
-                        <p className="font-semibold">Manual mode</p>
+                        <p className="font-semibold">
+                          {instrument.copy.manualModeTitle}
+                        </p>
                         <p className="text-sm font-normal">
-                          Close this setup and open the normal tuner screen.
+                          {instrument.copy.manualModeDescription}
                         </p>
                       </Button>
                     </motion.div>
@@ -192,26 +274,19 @@ function App() {
                           animate={{ x: 0, opacity: 1 }}
                           transition={{ duration: 0.4 }}
                         >
-                          {"🎻"}
+                          {instrument.icon}
                         </motion.h1>
                       </div>
                     </motion.div>
 
                     <div>
                       <h1 className="mt-2 text-3xl font-bold text-green-950">
-                        Tune the {targetString.label} string
+                        {formatInstrumentCopy(instrument.copy.guidedTitle, {
+                          stringLabel: targetString.label,
+                        })}
                       </h1>
                     </div>
-
-                    <div className="rounded-2xl border border-green-100 bg-green-50/70 p-4">
-                      <p className="text-sm text-green-900/70">Current step</p>
-                      <p className="mt-1 text-4xl font-bold text-green-950">
-                        {targetString.label}
-                      </p>
-                      <p className="mt-1 text-sm text-green-900/70">
-                        Step {guidedStep + 1} of {GUIDED_STRINGS.length}
-                      </p>
-                    </div>
+                    <Gauge />
                   </div>
 
                   <Button
@@ -227,7 +302,9 @@ function App() {
                     size="lg"
                     className="mt-8"
                   >
-                    {isLastGuidedStep ? "Open tuner" : "Next string"}
+                    {isLastGuidedStep
+                      ? instrument.copy.guidedDoneCta
+                      : instrument.copy.guidedStepCta}
                   </Button>
                 </div>
               </div>
@@ -240,7 +317,7 @@ function App() {
 
   return (
     <PageShell>
-      <h1 className="mb-4 text-3xl font-bold">Violin Tuner</h1>
+      <h1 className="mb-4 text-3xl font-bold">{instrument.copy.manualTitle}</h1>
 
       <MicrophoneToggleButton
         isListening={isListening}
@@ -248,7 +325,7 @@ function App() {
       />
 
       <div className="mb-6 flex select-none">
-        {VIOLIN_STRINGS.map((item, index) => (
+        {instrument.strings.map((item, index) => (
           <Button
             key={item.id}
             onClick={() => setSelectedString(item.id)}
@@ -256,7 +333,7 @@ function App() {
             variant={selectedString === item.id ? "primary" : "outline"}
             className={`rounded-none ${
               index === 0 ? "rounded-l-lg border" : "border-y border-r"
-            } ${index === VIOLIN_STRINGS.length - 1 ? "rounded-r-lg" : ""}`}
+            } ${index === instrument.strings.length - 1 ? "rounded-r-lg" : ""}`}
           >
             {item.label}
           </Button>
@@ -269,18 +346,18 @@ function App() {
         <div className="space-y-2">
           <p className="text-sm text-gray-500">
             {isListening
-              ? "Play one open string near the microphone."
-              : "Press start to begin."}
+              ? instrument.copy.listeningHint
+              : instrument.copy.idleHint}
           </p>
           <p className="text-sm text-gray-500">
-            Tune one string at a time in a quiet room.
+            {instrument.copy.quietRoomHint}
           </p>
         </div>
       )}
 
       <div className="space-y-5">
         <div className="text-center">
-          <p className="text-sm text-gray-500">Target string</p>
+          <p className="text-sm text-gray-500">{instrument.copy.targetLabel}</p>
           <p className="text-6xl font-bold">{targetString?.label}</p>
           <p className="text-sm text-gray-500">
             {targetString?.name} - {targetString?.id}
@@ -288,69 +365,7 @@ function App() {
         </div>
 
         <div>
-          <GaugeComponent
-            value={gaugeValue}
-            type="semicircle"
-            minValue={GAUGE_MIN}
-            maxValue={GAUGE_MAX}
-            arc={{
-              width: 0.18,
-              cornerRadius: 10,
-              gradient: false,
-              nbSubArcs: 5,
-              colorArray: [
-                gaugeValue <= -25 ? "#f87171" : "#d8b8b0",
-                gaugeValue > -25 && gaugeValue < -10 ? "#fbbf24" : "#eed7bf",
-                isInTune ? "#34d399" : "#9bcdbf",
-                gaugeValue > 10 && gaugeValue < 25 ? "#fbbf24" : "#eed7bf",
-                gaugeValue >= 25 ? "#f87171" : "#d8b8b0",
-              ],
-              padding: 0.01,
-              subArcsStrokeWidth: 0,
-              effects: { glow: false, innerShadow: false },
-            }}
-            pointer={{
-              animationDuration: 120,
-              animationDelay: 0,
-              animate: false,
-            }}
-            labels={{
-              valueLabel: {
-                hide: true,
-                animateValue: false,
-              },
-              tickLabels: {
-                type: "outer",
-                hideMinMax: true,
-                ticks: [{ value: -25 }, { value: 0 }, { value: 25 }],
-                defaultTickLineConfig: {
-                  color: "rgba(76, 96, 88, 0.28)",
-                  width: 1,
-                  length: 6,
-                },
-                defaultTickValueConfig: {
-                  style: {
-                    fontSize: "11px",
-                    fill: "#587166",
-                    fontWeight: "600",
-                  },
-                },
-              },
-            }}
-            startAngle={-90}
-            endAngle={90}
-            pointers={[
-              {
-                value: gaugeValue,
-                type: "needle",
-                baseColor: "#405e52",
-                color: "#405e52",
-                length: 0.6,
-                width: 9,
-                strokeWidth: 0,
-              },
-            ]}
-          />
+          <Gauge />
         </div>
       </div>
     </PageShell>
