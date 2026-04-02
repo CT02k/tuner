@@ -3,11 +3,10 @@ import MicrophoneToggleButton from "#/components/MicrophoneToggleButton"
 import PageShell from "#/components/PageShell"
 import ProgressHeader from "#/components/ProgressHeader"
 import PageTransition from "#/components/PageTransition"
+import TunerGauge from "#/components/TunerGauge"
 import { useMicrophone } from "#/hooks/useMicrophone"
 import {
-  defaultInstrumentGaugePalette,
   formatInstrumentCopy,
-  getGaugeArcColors,
   getInstrumentStringMap,
   instruments,
 } from "#/lib/instruments"
@@ -15,7 +14,6 @@ import { createFileRoute } from "@tanstack/react-router"
 import type { LottieRefCurrentProps } from "lottie-react"
 import { AnimatePresence, motion } from "motion/react"
 import { useMemo, useRef, useState } from "react"
-import { GaugeComponent } from "react-gauge-component"
 
 export const Route = createFileRoute("/")({ component: App })
 
@@ -84,77 +82,6 @@ function App() {
   }, [cents, instrument.gauge.max, instrument.gauge.min])
 
   const isLastGuidedStep = guidedStep === instrument.guidedOrder.length - 1
-  const isInTune = Math.abs(gaugeValue) <= instrument.gauge.inTuneThreshold
-  const gaugeArcColors = getGaugeArcColors(
-    gaugeValue,
-    isInTune,
-    instrument.gauge,
-  )
-
-  function Gauge() {
-    return (
-      <GaugeComponent
-        value={gaugeValue}
-        type="semicircle"
-        minValue={instrument.gauge.min}
-        maxValue={instrument.gauge.max}
-        arc={{
-          width: 0.18,
-          cornerRadius: 10,
-          gradient: false,
-          colorArray: gaugeArcColors,
-          nbSubArcs: 5,
-          padding: 0.01,
-          subArcsStrokeWidth: 0,
-          effects: { glow: false, innerShadow: false },
-        }}
-        pointer={{
-          animationDuration: 120,
-          animationDelay: 0,
-          animate: false,
-        }}
-        labels={{
-          valueLabel: {
-            hide: true,
-            animateValue: false,
-          },
-          tickLabels: {
-            type: "outer",
-            hideMinMax: true,
-            ticks: instrument.gauge.ticks.map((tickValue) => ({
-              value: tickValue,
-            })),
-            defaultTickLineConfig: {
-              color: defaultInstrumentGaugePalette.tick,
-              width: 1,
-              length: 6,
-            },
-            defaultTickValueConfig: {
-              style: {
-                fontSize: "11px",
-                fill: "#587166",
-                fontWeight: "600",
-              },
-            },
-          },
-        }}
-        startAngle={-90}
-        endAngle={90}
-        pointers={[
-          {
-            value: gaugeValue,
-            type: "needle",
-            baseColor: defaultInstrumentGaugePalette.needle,
-            color: defaultInstrumentGaugePalette.needle,
-            length: 0.6,
-            width: 9,
-            strokeWidth: 0,
-          },
-        ]}
-      />
-    )
-  }
-
   if (onboardingView !== "closed") {
     return (
       <PageShell mode="onboarding">
@@ -286,7 +213,7 @@ function App() {
                         })}
                       </h1>
                     </div>
-                    <Gauge />
+                    <TunerGauge gauge={instrument.gauge} value={gaugeValue} />
                   </div>
 
                   <Button
@@ -365,7 +292,7 @@ function App() {
         </div>
 
         <div>
-          <Gauge />
+          <TunerGauge gauge={instrument.gauge} value={gaugeValue} />
         </div>
       </div>
     </PageShell>

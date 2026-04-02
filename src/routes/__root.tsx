@@ -25,6 +25,11 @@ export const Route = createRootRoute({
       },
     ],
   }),
+  notFoundComponent: () => (
+    <main className="mx-auto max-w-md px-4 py-10">
+      <p className="text-sm text-gray-500">Page not found.</p>
+    </main>
+  ),
   shellComponent: RootDocument,
 })
 
