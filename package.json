@@ -7,6 +7,8 @@
   },
   "scripts": {
     "dev": "vite dev --port 3000",
+    "postinstall": "node scripts/patch-react-gauge-component.mjs",
+    "prebuild": "node scripts/patch-react-gauge-component.mjs",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
