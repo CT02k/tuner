@@ -17,9 +17,7 @@ export type InstrumentCopy = {
   manualModeDescription: string
   manualTitle: string
   targetLabel: string
-  listeningHint: string
   idleHint: string
-  quietRoomHint: string
   guidedModeTitle: string
   guidedModeDescription: string
 }
@@ -78,6 +76,18 @@ export const defaultInstrumentGaugePalette: InstrumentGaugePalette = {
 
 export function getInstrumentStringMap(instrument: InstrumentConfig) {
   return new Map(instrument.strings.map((item) => [item.id, item]))
+}
+
+export function getClosestInstrumentString(
+  strings: readonly InstrumentString[],
+  frequency: number,
+) {
+  return strings.reduce((closest, current) => {
+    const closestDistance = Math.abs(frequency - closest.freq)
+    const currentDistance = Math.abs(frequency - current.freq)
+
+    return currentDistance < closestDistance ? current : closest
+  })
 }
 
 export function getGaugeArcColors(

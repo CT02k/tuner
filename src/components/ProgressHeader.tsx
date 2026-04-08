@@ -26,8 +26,10 @@ export default function ProgressHeader({
     <div className="mb-8 flex items-center gap-3">
       <div className="flex w-full items-center">
         <Button
-          onClick={onBack}
-          onMouseEnter={() => arrowLeftRef.current?.goToAndPlay(0)}
+          onClick={() => {
+            onBack()
+            arrowLeftRef.current?.goToAndPlay(0)
+          }}
           border={false}
           size="icon"
           variant="ghost"

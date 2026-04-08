@@ -7,21 +7,19 @@ import TunerGauge from "#/components/TunerGauge"
 import { useMicrophone } from "#/hooks/useMicrophone"
 import {
   formatInstrumentCopy,
+  getClosestInstrumentString,
   getInstrumentStringMap,
   instruments,
 } from "#/lib/instruments"
+import { getCentsOff } from "#/lib/tuning"
 import { createFileRoute } from "@tanstack/react-router"
 import type { LottieRefCurrentProps } from "lottie-react"
 import { AnimatePresence, motion } from "motion/react"
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 export const Route = createFileRoute("/")({ component: App })
 
 type OnboardingView = "choice" | "guided" | "closed"
-
-function getCentsOff(freq: number, targetFreq: number) {
-  return 1200 * Math.log2(freq / targetFreq)
-}
 
 function isValidFrequency(freq: number | null, min = 150, max = 750) {
   return !!freq && freq >= min && freq <= max
@@ -29,6 +27,26 @@ function isValidFrequency(freq: number | null, min = 150, max = 750) {
 
 function clampFrequency(freq: number, min: number, max: number) {
   return Math.min(max, Math.max(min, freq))
+}
+
+function getTuningInstruction(cents: number | null, stringLabel: string) {
+  if (cents == null) {
+    return `Play the ${stringLabel} string near the microphone.`
+  }
+
+  const absoluteCents = Math.abs(cents)
+
+  if (absoluteCents <= 5) {
+    return `${stringLabel} string is in tune.`
+  }
+
+  const roundedCents = absoluteCents.toFixed(1)
+
+  if (cents < 0) {
+    return `Tighten the ${stringLabel} string by ${roundedCents} cents.`
+  }
+
+  return `Loosen the ${stringLabel} string by ${roundedCents} cents.`
 }
 
 function App() {
@@ -43,15 +61,21 @@ function App() {
   const { frequency, volume, isListening, error, start, stop } = useMicrophone()
   const [onboardingView, setOnboardingView] = useState<OnboardingView>("choice")
   const [guidedStep, setGuidedStep] = useState(0)
-  const [selectedString, setSelectedString] = useState<string>(
-    instrument.guidedOrder[0],
-  )
   const arrowLeftRef = useRef<LottieRefCurrentProps>(null)
+  const hasAutoStartedRef = useRef(false)
 
   const activeStringId =
     onboardingView === "guided"
       ? (instrument.guidedOrder[guidedStep] ?? instrument.guidedOrder[0])
-      : selectedString
+      : ""
+  const expectedString = stringMap.get(activeStringId) ?? null
+
+  useEffect(() => {
+    if (hasAutoStartedRef.current) return
+
+    hasAutoStartedRef.current = true
+    void start()
+  }, [start])
 
   const usableFrequency = useMemo(() => {
     if (
@@ -68,13 +92,24 @@ function App() {
   }, [frequency, instrument, volume])
 
   const targetString = useMemo(() => {
-    return stringMap.get(activeStringId) ?? null
-  }, [activeStringId, stringMap])
+    if (usableFrequency) {
+      return getClosestInstrumentString(instrument.strings, usableFrequency)
+    }
+
+    return expectedString
+  }, [expectedString, instrument.strings, usableFrequency])
 
   const cents = useMemo(() => {
-    if (!usableFrequency || !targetString) return null
+    if (!usableFrequency) return null
+
+    if (onboardingView === "guided") {
+      if (!expectedString) return null
+      return getCentsOff(usableFrequency, expectedString.freq)
+    }
+
+    if (!targetString) return null
     return getCentsOff(usableFrequency, targetString.freq)
-  }, [usableFrequency, targetString])
+  }, [expectedString, onboardingView, targetString, usableFrequency])
 
   const gaugeValue = useMemo(() => {
     if (cents == null) return 0
@@ -82,6 +117,10 @@ function App() {
   }, [cents, instrument.gauge.max, instrument.gauge.min])
 
   const isLastGuidedStep = guidedStep === instrument.guidedOrder.length - 1
+  const tuningInstruction = getTuningInstruction(
+    cents,
+    expectedString?.label ?? targetString?.label ?? "the string",
+  )
   if (onboardingView !== "closed") {
     return (
       <PageShell mode="onboarding">
@@ -209,11 +248,15 @@ function App() {
                     <div>
                       <h1 className="mt-2 text-3xl font-bold text-green-950">
                         {formatInstrumentCopy(instrument.copy.guidedTitle, {
-                          stringLabel: targetString.label,
+                          stringLabel:
+                            expectedString?.label ?? targetString.label,
                         })}
                       </h1>
                     </div>
                     <TunerGauge gauge={instrument.gauge} value={gaugeValue} />
+                    <p className="text-center text-sm font-medium text-green-900/70">
+                      {tuningInstruction}
+                    </p>
                   </div>
 
                   <Button
@@ -243,56 +286,72 @@ function App() {
   }
 
   return (
-    <PageShell>
-      <h1 className="mb-4 text-3xl font-bold">{instrument.copy.manualTitle}</h1>
-
-      <MicrophoneToggleButton
-        isListening={isListening}
-        onClick={isListening ? stop : start}
-      />
-
-      <div className="mb-6 flex select-none">
-        {instrument.strings.map((item, index) => (
-          <Button
-            key={item.id}
-            onClick={() => setSelectedString(item.id)}
-            size="sm"
-            variant={selectedString === item.id ? "primary" : "outline"}
-            className={`rounded-none ${
-              index === 0 ? "rounded-l-lg border" : "border-y border-r"
-            } ${index === instrument.strings.length - 1 ? "rounded-r-lg" : ""}`}
+    <PageShell mode="onboarding">
+      <div className="flex flex-1 flex-col justify-between">
+        <div className="space-y-5">
+          <motion.div
+            className="w-fit rounded-2xl bg-linear-to-br from-green-500 via-green-300 to-green-500 p-0.5 contain-content"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
           >
-            {item.label}
-          </Button>
-        ))}
-      </div>
+            <div className="inline-flex size-16 items-center justify-center rounded-2xl bg-green-500 text-4xl">
+              <motion.h1
+                initial={{ x: -50, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ duration: 0.4 }}
+              >
+                {instrument.icon}
+              </motion.h1>
+            </div>
+          </motion.div>
 
-      {error && <p className="mb-4 text-sm text-red-500">{error}</p>}
+          <div className="space-y-2">
+            <motion.h1
+              className="text-3xl font-bold text-green-950"
+              animate={{ opacity: [0, 1], y: [50, 0] }}
+              transition={{ duration: 0.4 }}
+            >
+              {instrument.copy.manualTitle}
+            </motion.h1>
+            <p className="text-sm text-green-900/70">
+              {instrument.copy.manualModeDescription}
+            </p>
+          </div>
 
-      {!usableFrequency && (
-        <div className="space-y-2">
-          <p className="text-sm text-gray-500">
-            {isListening
-              ? instrument.copy.listeningHint
-              : instrument.copy.idleHint}
-          </p>
-          <p className="text-sm text-gray-500">
-            {instrument.copy.quietRoomHint}
-          </p>
-        </div>
-      )}
+          <div className="rounded-[1.75rem] border border-green-100 bg-green-50/70 p-4">
+            <MicrophoneToggleButton
+              isListening={isListening}
+              onClick={isListening ? stop : start}
+            />
+          </div>
 
-      <div className="space-y-5">
-        <div className="text-center">
-          <p className="text-sm text-gray-500">{instrument.copy.targetLabel}</p>
-          <p className="text-6xl font-bold">{targetString?.label}</p>
-          <p className="text-sm text-gray-500">
-            {targetString?.name} - {targetString?.id}
-          </p>
-        </div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
 
-        <div>
-          <TunerGauge gauge={instrument.gauge} value={gaugeValue} />
+          <div className="space-y-5 rounded-[1.75rem] border border-green-100 bg-white/95 p-4">
+            <div className="text-center">
+              <p className="text-sm font-medium text-green-900/55">
+                {instrument.copy.targetLabel}
+              </p>
+              <p className="text-6xl font-bold text-green-950">
+                {targetString?.label}
+              </p>
+              <p className="text-sm text-green-900/60">
+                {targetString?.name} - {targetString?.id}
+              </p>
+              {usableFrequency && (
+                <p className="mt-2 text-sm font-medium text-green-800">
+                  {usableFrequency.toFixed(1)} Hz
+                </p>
+              )}
+            </div>
+
+            <TunerGauge gauge={instrument.gauge} value={gaugeValue} />
+
+            <p className="text-center text-sm font-medium text-green-900/75">
+              {tuningInstruction}
+            </p>
+          </div>
         </div>
       </div>
     </PageShell>

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   defaultInstrumentGaugePalette,
   formatInstrumentCopy,
+  getClosestInstrumentString,
   getGaugeArcColors,
   instruments,
 } from "./instruments"
@@ -30,5 +31,11 @@ describe("instrument config", () => {
     const colors = getGaugeArcColors(0, true, instruments.violin.gauge)
 
     expect(colors[2]).toBe(defaultInstrumentGaugePalette.success)
+  })
+
+  it("finds the closest violin string for a detected frequency", () => {
+    const detected = getClosestInstrumentString(instruments.violin.strings, 438)
+
+    expect(detected.id).toBe("A4")
   })
 })

@@ -23,11 +23,9 @@ const violinCopy: InstrumentCopy = {
   manualModeDescription: "Close this setup and open the normal tuner screen.",
   manualTitle: "Violin Tuner",
   targetLabel: "Target string",
-  listeningHint: "Play one open string near the microphone.",
-  idleHint: "Press start to begin.",
-  quietRoomHint: "Tune one string at a time in a quiet room.",
+  idleHint: "Tap to start.",
   guidedModeTitle: "Tune in steps",
-  guidedModeDescription: "Start from E and continue to A, D, and G.",
+  guidedModeDescription: "Start with E, then continue to A, D, and G.",
 }
 
 export const violinConfig = {
