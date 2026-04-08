@@ -61,6 +61,7 @@ function App() {
   const { frequency, volume, isListening, error, start, stop } = useMicrophone()
   const [onboardingView, setOnboardingView] = useState<OnboardingView>("choice")
   const [guidedStep, setGuidedStep] = useState(0)
+  const [heldFrequency, setHeldFrequency] = useState<number | null>(null)
   const arrowLeftRef = useRef<LottieRefCurrentProps>(null)
   const hasAutoStartedRef = useRef(false)
 
@@ -91,25 +92,38 @@ function App() {
     return frequency
   }, [frequency, instrument, volume])
 
+  useEffect(() => {
+    if (!isListening) {
+      setHeldFrequency(null)
+      return
+    }
+
+    if (usableFrequency != null) {
+      setHeldFrequency(usableFrequency)
+    }
+  }, [isListening, usableFrequency])
+
+  const displayedFrequency = usableFrequency ?? heldFrequency
+
   const targetString = useMemo(() => {
-    if (usableFrequency) {
-      return getClosestInstrumentString(instrument.strings, usableFrequency)
+    if (displayedFrequency) {
+      return getClosestInstrumentString(instrument.strings, displayedFrequency)
     }
 
     return expectedString
-  }, [expectedString, instrument.strings, usableFrequency])
+  }, [displayedFrequency, expectedString, instrument.strings])
 
   const cents = useMemo(() => {
-    if (!usableFrequency) return null
+    if (!displayedFrequency) return null
 
     if (onboardingView === "guided") {
       if (!expectedString) return null
-      return getCentsOff(usableFrequency, expectedString.freq)
+      return getCentsOff(displayedFrequency, expectedString.freq)
     }
 
     if (!targetString) return null
-    return getCentsOff(usableFrequency, targetString.freq)
-  }, [expectedString, onboardingView, targetString, usableFrequency])
+    return getCentsOff(displayedFrequency, targetString.freq)
+  }, [displayedFrequency, expectedString, onboardingView, targetString])
 
   const gaugeValue = useMemo(() => {
     if (cents == null) return 0
@@ -339,9 +353,9 @@ function App() {
               <p className="text-sm text-green-900/60">
                 {targetString?.name} - {targetString?.id}
               </p>
-              {usableFrequency && (
+              {displayedFrequency && (
                 <p className="mt-2 text-sm font-medium text-green-800">
-                  {usableFrequency.toFixed(1)} Hz
+                  {displayedFrequency.toFixed(1)} Hz
                 </p>
               )}
             </div>
