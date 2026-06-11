@@ -328,9 +328,6 @@ function App() {
             >
               {instrument.copy.manualTitle}
             </motion.h1>
-            <p className="text-sm text-green-900/70">
-              {instrument.copy.manualModeDescription}
-            </p>
           </div>
 
           <div className="rounded-[1.75rem] border border-green-100 bg-green-50/70 p-4">
